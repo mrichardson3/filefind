@@ -4,7 +4,7 @@
 # Copyright (C) 2013 Mark Richardson.
 #
 # pylint: disable=E1103,F0401
-"""Usage: filefind.py
+"""Usage: filefind.py  
           filefind.py [--build dir -c computer_name ]
 
 -b <dir> --build <dir>    Walk the directory of the file system storing the
@@ -33,10 +33,13 @@ def die_with(error_message):
 def review_build_arg(args, key):
     """ Is the directory handed in by the user a valid file directory?"""
     file_directory = args[key]
-    if os.path.isdir(file_directory):
-        print("file_directory to be built is -> %s" % file_directory)
-    else:
-        die_with("File directory does not exist -> %s" % file_directory)
+    try:
+        if os.path.isdir(file_directory):
+            print("file_directory to be built is -> %s" % file_directory)
+        else:
+            die_with("File directory does not exist -> %s" % file_directory)
+    except TypeError:
+        pass
 
 
 def review_name_arg(args, key):
@@ -52,6 +55,17 @@ def review_name_arg(args, key):
         pass
     print("Machine name for this run is -> %s" % machine_name)
 
+def build_mode():
+    """This is the command to walk a file system and store the results
+       of the walk in our redis datastore."""
+    print("Now walking the filesystem")
+
+
+def query_mode():
+    """This is the mode where we are reviewing the results of our file walk
+       and are displaying the results to the user."""
+    print("Querying our file system")
+
 
 def process_arguments(args):
     """ Take the user's input specified on the command line and make sure it
@@ -65,6 +79,10 @@ def process_arguments(args):
     for key in args:
         process_arg[key](args, key)
 
+    process_function = query_mode if args['--build'] is None else build_mode
+    return process_function
+    
+
 
 if __name__ == '__main__':
     # for giggles, how long did it take?
@@ -73,4 +91,10 @@ if __name__ == '__main__':
         ARGUMENTS = docopt.docopt(__doc__, version=__version__)
         print (ARGUMENTS)
 
-        process_arguments(ARGUMENTS)
+        #process arguments determines which form of the command we are going
+        #to run as specified above after checking that all of the ARGUMENTS
+        #are up to snuff.
+        run_process = process_arguments(ARGUMENTS)
+        
+        #now run the program
+        run_process()
