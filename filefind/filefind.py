@@ -4,7 +4,7 @@
 # Copyright (C) 2013 Mark Richardson.
 #
 # pylint: disable=E1103,F0401
-"""Usage: filefind.py  
+"""Usage: filefind.py
           filefind.py [--build dir -c computer_name ]
 
 -b <dir> --build <dir>    Walk the directory of the file system storing the
@@ -55,15 +55,24 @@ def review_name_arg(args, key):
         pass
     print("Machine name for this run is -> %s" % machine_name)
 
-def build_mode():
+
+def build_mode(*args, **kwargs):
     """This is the command to walk a file system and store the results
        of the walk in our redis datastore."""
-    print("Now walking the filesystem")
+    print(args, kwargs)
+    file_system = args[0]['--build']
+    machine_name = args[0]['--computer']
+    print("\n\n***********************************")
+    print("Beginning build process")
+    print("***********************************")
+    print("For Machine named -> %s" % machine_name)
+    print("Now beginning walk of this directory path -> %s" % file_system)
 
 
-def query_mode():
+def query_mode(*args, **kwargs):
     """This is the mode where we are reviewing the results of our file walk
        and are displaying the results to the user."""
+    print(args, kwargs)
     print("Querying our file system")
 
 
@@ -81,7 +90,6 @@ def process_arguments(args):
 
     process_function = query_mode if args['--build'] is None else build_mode
     return process_function
-    
 
 
 if __name__ == '__main__':
@@ -94,7 +102,7 @@ if __name__ == '__main__':
         #process arguments determines which form of the command we are going
         #to run as specified above after checking that all of the ARGUMENTS
         #are up to snuff.
-        run_process = process_arguments(ARGUMENTS)
-        
+        RUN_PROCESS = process_arguments(ARGUMENTS)
+
         #now run the program
-        run_process()
+        RUN_PROCESS(ARGUMENTS)
