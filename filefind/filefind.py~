@@ -7,7 +7,7 @@
 """Usage: filefind.py
     filefind.py [--build dir -c computer_name]
     filefind.py [--list option -c computer_name]
-    filefind.py -u id [--name name --path name --any name --ext name --size <range> --date <range>]
+    filefind.py -u id [--name name --path name --any name --ext name --size <range> --date <range> --work <filter>]
 
 -b <dir> --build <dir>    Walk the directory of the file system storing the
                           results in our redis datastore.
@@ -35,6 +35,8 @@ Query mode options
 -s <range> --size <range>    Select files based on the size of the file.
 
 -d <range> --date <range>    Select files based on the date of the file.
+-w <filter> --work <filter>    Second filter to optionally review a file or 
+                               perform operations on it like copying.
 
     A new option requires that you update process_arguments and write a
     function to check the validity of the options
@@ -47,7 +49,6 @@ import sys
 import json
 import arrow
 import docopt
-import cProfile
 import platform
 import sha1sum
 import unidecode
@@ -214,7 +215,7 @@ def recur_dir(road_to_nowhere, stop=None, stat_file=True):
                     yield filename
             else:
                 sys.stderr.write('filename %s has non-ascii chars\n' % pretty)
-                sys.stderr.write('    file ignored ->', [filename])
+                print('    file ignored -> ', [filename])
 
 
 def remove_apple_nonsense(filename, apple_signature):
@@ -245,7 +246,7 @@ def get_datastore_list(key=None, connection=CONNECTION):
     return redis_obj
 
 
-def get_values_for_datastore(filename, compute_sha1_sum=True):
+def get_values_for_datastore(filename, compute_sha1_sum=False):
     """ Given a filename, go out and get the size, date and the sha1 sum
         for the file.  Return these values in a list which will be stored
         in our redis datastore. Here we load the database payload.
@@ -433,6 +434,124 @@ def default_filter_function(file_info):
        functions elements specify otherwise.
     """
     return True
+
+def get_eos_30d(file_info):
+    """  This function expects to get a filename of a jpg. Hopefully, the
+         jpg was taken with a camera.  If it was taken with a camera, then
+         it looks to see if it was taken with a Canon EOS 30D.  If it was
+         the function returns True, otherwise False.  It was written to see
+         what was the first picture, I ever took with my eos 30d.
+    """
+    if file_info.filename[-3:].lower() == 'jpg':
+        foto = open(file_info.filename, 'rb')
+        # Return Exif tags
+        tags = exifread.process_file(foto)
+        #keynames = tags.keys()
+        #print keynames
+        #print type(tags)
+        if 'Image Model' in tags:
+            #print 'tags of image model', [tags['Image Model']], str(tags['Image Model'])
+            if str(tags['Image Model']).strip() == 'Canon EOS 30D':
+                return True
+            else:
+                return False
+        else:
+            return False
+    else:
+        return False
+
+def copy_music(file_info):
+    """With some caveats, copy all music files to the /tmp/Music directory.
+    """
+    #does the path have "iTunes Music" in it?
+    if file_info.path.find('iTunes Music') >= 0:
+        """
+        start = file_info.path.find('iTunes Music')
+        dest = ('/tmp/Music/' +
+                file_info.path[start+len('iTunes Music')+1:] +
+                '/' + file_info.name + file_info.ext)
+        src = file_info.path + '/' + file_info.name + file_info.ext
+
+        dest_path, dest_filename = os.path.split(dest)
+        command = 'mkdir -p "' + dest_path + '"'
+        returned_output = os.popen(command).readlines()
+        command = 'cp "' + src + '" "' + dest + '"'
+        returned_output = os.popen(command).readlines()
+        print('copy source --> %s' % src)
+        print('     dest. ---> %s' % dest)
+        print('     results -> %s\n' % returned_output)
+        """
+        return False
+    else:
+        return True #show me music not in itunes folder
+
+def copy_pics(file_info):
+    """With some caveats, copy all photos to the /tmp/Photos directory.
+    """
+    #does the path have "/Pictures/" in it?
+    if file_info.path.find('/Pictures/') >= 0:
+        start = file_info.path.find('/Pictures/')
+        dest = ('/tmp/Photos/' +
+                file_info.path[start+len('/Pictures/'):] +
+                '/' + file_info.name + file_info.ext)
+        src = file_info.path + '/' + file_info.name + file_info.ext
+
+        dest_path, dest_filename = os.path.split(dest)
+        command = 'mkdir -p "' + dest_path + '"'
+        returned_output = os.popen(command).readlines()
+        command = 'cp "' + src + '" "' + dest + '"'
+        returned_output = os.popen(command).readlines()
+        print('copy source --> %s' % src)
+        print('     dest. ---> %s' % dest)
+        print('     results -> %s\n' % returned_output)
+        return True
+    else:
+        return False
+
+
+
+def add_work_filter(func, function_name=None):
+    """ wrap another function around our worker_function defined above.
+        Here's how you do it.
+        First you write your specialized function similiar to the
+        get_eos_30d.  You will be passed a meta_info namedtuple.
+        This will allow you to operate on said namedtuple to make
+        the decision of whether you want to include (or exclude) the
+        file in the final report.  Then you wrap the worker_function
+        with a True or False boolean appropriately and return the new
+        worker_function.
+    """
+    #this is the name you will call your worker_function from the
+    # command line line with the -w option. Print out a description
+    #of what the function does so that it informs the user that 
+    #the file has been tested against a particular worker function.
+    if function_name == '30d':
+        print ('image file must have been taken with eos 30d')
+    if function_name == 'copy_music':
+        print('copying all music files to /tmp/Music')
+
+    #add keys to the dispatcher dictionary with the key being the
+    #-w command and the value being the name of the function that
+    #returns true or false 
+    dispatcher={'30d':get_eos_30d,
+                'copy_music':copy_music,
+                'copy_pics':copy_pics,}
+
+    #use the dispatcher to make sure only approved functions are called.
+    try:
+        function=dispatcher[function_name]
+    except KeyError:
+        raise ValueError('invalid input to the -w parameter --> %s' % function_name)
+    #print function_name
+    #print type(function_name)
+
+    #define the new function
+    def new_worker_function(*args, **kwargs):
+        #see, its the new worker function combo-ed up with the old
+        #worker function and sent back to the calling program as the
+        #newest worker function.
+        return function(*args, **kwargs) and func(*args, **kwargs)
+    return new_worker_function
 
 
 def add_name_filter(func, name_values=None, file_part=None):
@@ -1052,6 +1171,7 @@ def query_mode(*args, **kwargs):
 
     #wrap our default_filter_function with "filename" tests where they exist
     filter_function = default_filter_function
+    work_filter = default_filter_function
     if has_arg(args, '--name'):  # the basename portion
         #wrap the default filter_function with the add_name_filter
         filter_function = add_name_filter(filter_function,
@@ -1080,6 +1200,10 @@ def query_mode(*args, **kwargs):
         filter_function = add_date_filter(filter_function,
                                           date_range = args[0]['--date'])
 
+    if has_arg(args, '--work'):
+        work_filter = add_work_filter(work_filter,
+                                      function_name = args[0]['--work'])
+
 
     #pick the redis datastore "path" to search against
     if has_arg(args, '--use'):
@@ -1088,10 +1212,10 @@ def query_mode(*args, **kwargs):
     #run query against our database and return successful candidates
     query_results =  run_query(database_key = query_this_path,
                                filter_by = filter_function,
-                               worker_filter = default_filter_function)
+                               worker_filter = work_filter)
 
     print('Sorting the final report')
-    sorted_results = sort_table(query_results, ('date+','name-', 'sha1+'))
+    sorted_results = sort_table(query_results, ('path+','name+', 'date+',))
     #print 'sorted_results', sorted_results
     #list_these = get_datastore_dict(key=query_against)
     for index, key in enumerate(sorted_results):
@@ -1123,6 +1247,7 @@ def process_arguments(args):
                    "--use": dummy_review,
                    "--size": dummy_review,
                    "--date": dummy_review,
+                   "--work": dummy_review,
                   }
     #iterate over the command line arguments, checking them for errors
     for key in args:
@@ -1145,4 +1270,4 @@ if __name__ == '__main__':
         RUN_PROCESS = process_arguments(ARGUMENTS)
 
         #now run the program
-        cProfile.run(RUN_PROCESS(ARGUMENTS))
+        RUN_PROCESS(ARGUMENTS)
